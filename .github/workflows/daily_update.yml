@@ -1,0 +1,59 @@
+name: Daily Data Update
+
+on:
+  schedule:
+    # Hər gün saat 06:00 UTC (Bakı vaxtı ilə 10:00)
+    - cron: "0 6 * * *"
+  workflow_dispatch:   # Manual işə salma üçün
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python qur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Dependencies qur
+        run: pip install -r requirements.txt
+
+      - name: Yeni data çək
+        env:
+          WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
+        run: |
+          python -c "
+          from src.data_pipeline import fetch_all
+          df = fetch_all(days=1, save=True)  # yalnız son gün
+          print(f'Çəkildi: {len(df)} sətir')
+          "
+
+      - name: Model yenilə (həftəlik)
+        # Yalnız bazar ertəsi (0) işlə
+        if: github.event.schedule == '0 6 * * 1' || github.event_name == 'workflow_dispatch'
+        env:
+          WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
+        run: |
+          python -c "
+          from src.data_pipeline import fetch_all
+          from src.features import build_features
+          from src.train import run_experiment
+          df = fetch_all(days=365, save=False)
+          X, y, ts = build_features(df)
+          results, best = run_experiment(X, y, save_model=True)
+          print(results)
+          "
+
+      - name: Dəyişiklikləri commit et
+        run: |
+          git config --global user.email "airwatch-bot@github.com"
+          git config --global user.name  "AirWatch Bot"
+          git add data/ outputs/ || true
+          git diff --staged --quiet || git commit -m "chore: daily data update $(date +'%Y-%m-%d')"
+          git push || true

@@ -1,0 +1,17 @@
+# Streamlit secrets — BUNU HEÇVAXT GITHUB-A YÜKLƏMƏ
+.streamlit/secrets.toml
+
+# Data faylları (böyük ola bilər)
+data/raw/*.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+
+# Model outputs (opsional — deploy üçün lazım ola bilər)
+# outputs/*.pkl
