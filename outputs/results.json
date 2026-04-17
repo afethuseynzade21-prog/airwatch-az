@@ -1,0 +1,46 @@
+[
+  {
+    "model": "Persistence",
+    "mae": 3.2864,
+    "mae_std": 1.1687,
+    "rmse": 4.657,
+    "rmse_std": 1.0527,
+    "mape": 26.5382,
+    "mape_std": 5.5789,
+    "r2": 0.4761,
+    "r2_std": 0.0562
+  },
+  {
+    "model": "LightGBM",
+    "mae": 3.5024,
+    "mae_std": 1.0106,
+    "rmse": 4.3264,
+    "rmse_std": 1.1022,
+    "mape": 39.0107,
+    "mape_std": 17.6126,
+    "r2": 0.4736,
+    "r2_std": 0.2921
+  },
+  {
+    "model": "Ridge",
+    "mae": 3.5319,
+    "mae_std": 0.5157,
+    "rmse": 4.4712,
+    "rmse_std": 0.628,
+    "mape": 39.281,
+    "mape_std": 13.3919,
+    "r2": 0.4324,
+    "r2_std": 0.3101
+  },
+  {
+    "model": "RandomForest",
+    "mae": 3.611,
+    "mae_std": 1.0332,
+    "rmse": 4.4822,
+    "rmse_std": 1.0453,
+    "mape": 40.4643,
+    "mape_std": 17.9189,
+    "r2": 0.4638,
+    "r2_std": 0.246
+  }
+]

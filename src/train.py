@@ -1,311 +1,289 @@
 """
-AirWatch AZ — Model Training
-==============================
-TimeSeriesSplit validation ilə 3 model müqayisəsi:
-  1. Persistence Baseline
-  2. Random Forest
-  3. LightGBM (Phase 2)
+AirWatch AZ — Model Training Orchestrator
+==========================================
+Runs a 5-model experiment with TimeSeriesSplit and SHAP analysis.
 
-İstifadə:
+Models compared:
+  1. Persistence Baseline     — trivial floor
+  2. Ridge Regression         — linear reference
+  3. Random Forest            — non-linear tabular
+  4. LightGBM                 — gradient boosting (primary)
+  5. LSTM (PyTorch)           — sequence-aware deep model
+  6. Prophet                  — decomposition-based (optional)
+
+Usage:
+    python -m src.train
+    # Or programmatically:
     from src.train import run_experiment
-    results, best_model = run_experiment(X, y)
+    results, best_model = run_experiment(X, y, timestamps)
 """
 
-import numpy as np
-import pandas as pd
+import json
 import logging
 from pathlib import Path
-import joblib
-import json
 
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Ridge
+import joblib
+import numpy as np
+import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.preprocessing import StandardScaler
+
+from src.config import MODEL_DIR
+from src.models.baseline import persistence_baseline, train_ridge
+from src.models.tree_models import train_random_forest, train_lightgbm
+from src.models.lstm import train_lstm
+from src.models.prophet_model import train_prophet
 
 log = logging.getLogger(__name__)
-MODEL_DIR = Path("outputs")
-MODEL_DIR.mkdir(exist_ok=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 1. Metrik hesablama
+# SHAP analysis
 # ════════════════════════════════════════════════════════════════════════════
 
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
-    """MAE, RMSE, MAPE, R² hesabla."""
-    mae  = mean_absolute_error(y_true, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    r2   = r2_score(y_true, y_pred)
-
-    # MAPE — sıfır dəyərlərdən qoru
-    mask = y_true > 1
-    mape = np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
-
-    return {"mae": mae, "rmse": rmse, "mape": mape, "r2": r2}
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# 2. Baseline model
-# ════════════════════════════════════════════════════════════════════════════
-
-def persistence_baseline(X: pd.DataFrame, y: pd.Series, tscv: TimeSeriesSplit) -> dict:
+def compute_shap(model, X: pd.DataFrame, model_name: str, max_rows: int = 500) -> pd.DataFrame | None:
     """
-    Persistence model: "dünənki dəyəri saxla" (pm25_lag_1h).
-    Bu ən sadə baseline-dır. Hər model bundan yaxşı olmalıdır.
-    """
-    scores = []
-    for train_idx, test_idx in tscv.split(X):
-        y_test = y.iloc[test_idx].values
-        # pm25_lag_1h = shift(1) — yəni 1 saat əvvəlki dəyər
-        y_pred = X["pm25_lag_1h"].iloc[test_idx].values
-        scores.append(compute_metrics(y_test, y_pred))
-
-    return _aggregate_scores(scores, "Persistence (baseline)")
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# 3. Ridge Regression
-# ════════════════════════════════════════════════════════════════════════════
-
-def train_ridge(X: pd.DataFrame, y: pd.Series, tscv: TimeSeriesSplit) -> tuple[dict, object]:
-    """Ridge regression — sadə, interpretable baseline."""
-    scaler = StandardScaler()
-    scores = []
-    model  = None
-
-    for train_idx, test_idx in tscv.split(X):
-        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
-        y_tr, y_te = y.iloc[train_idx].values, y.iloc[test_idx].values
-
-        X_tr_sc = scaler.fit_transform(X_tr)
-        X_te_sc = scaler.transform(X_te)
-
-        model = Ridge(alpha=1.0)
-        model.fit(X_tr_sc, y_tr)
-        y_pred = model.predict(X_te_sc)
-
-        scores.append(compute_metrics(y_te, y_pred))
-
-    # Son fold modeli saxla
-    scaler_final = StandardScaler().fit(X)
-    model_final  = Ridge(alpha=1.0).fit(scaler_final.transform(X), y)
-
-    return _aggregate_scores(scores, "Ridge Regression"), model_final
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# 4. Random Forest
-# ════════════════════════════════════════════════════════════════════════════
-
-def train_random_forest(X: pd.DataFrame, y: pd.Series, tscv: TimeSeriesSplit) -> tuple[dict, object]:
-    """Random Forest — Phase 1 əsas modeli."""
-    scores = []
-    model  = None
-
-    rf_params = {
-        "n_estimators":       200,
-        "max_depth":          12,
-        "min_samples_leaf":   5,
-        "max_features":       "sqrt",
-        "n_jobs":             -1,
-        "random_state":       42,
-    }
-
-    for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
-        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
-        y_tr, y_te = y.iloc[train_idx].values, y.iloc[test_idx].values
-
-        model = RandomForestRegressor(**rf_params)
-        model.fit(X_tr, y_tr)
-        y_pred = model.predict(X_te)
-
-        m = compute_metrics(y_te, y_pred)
-        scores.append(m)
-        log.info(f"  RF Fold {fold+1}: MAE={m['mae']:.2f}  RMSE={m['rmse']:.2f}  R²={m['r2']:.3f}")
-
-    # Tam dataset ilə final model train et
-    model_final = RandomForestRegressor(**rf_params).fit(X, y)
-
-    return _aggregate_scores(scores, "Random Forest"), model_final
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# 5. LightGBM (Phase 2)
-# ════════════════════════════════════════════════════════════════════════════
-
-def train_lightgbm(X: pd.DataFrame, y: pd.Series, tscv: TimeSeriesSplit) -> tuple[dict, object]:
-    """
-    LightGBM — Phase 2 əsas modeli.
-    lightgbm paketi qurulmalıdır: pip install lightgbm
+    Compute SHAP values for tree-based models.
+    Returns a DataFrame of mean absolute SHAP per feature (sorted descending).
     """
     try:
-        import lightgbm as lgb
+        import shap
     except ImportError:
-        log.warning("LightGBM qurulmayıb. pip install lightgbm")
-        return None, None
+        log.warning("SHAP not installed — skipping. Run: pip install shap")
+        return None
 
-    scores = []
-    model  = None
+    if model_name not in ("RandomForest", "LightGBM"):
+        return None
 
-    lgb_params = {
-        "n_estimators":       500,
-        "learning_rate":      0.05,
-        "max_depth":          8,
-        "num_leaves":         31,
-        "min_child_samples":  20,
-        "subsample":          0.8,
-        "colsample_bytree":   0.8,
-        "reg_alpha":          0.1,
-        "reg_lambda":         0.1,
-        "n_jobs":             -1,
-        "random_state":       42,
-        "verbose":            -1,
-    }
-
-    for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
-        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
-        y_tr, y_te = y.iloc[train_idx].values, y.iloc[test_idx].values
-
-        model = lgb.LGBMRegressor(**lgb_params)
-        model.fit(
-            X_tr, y_tr,
-            eval_set=[(X_te, y_te)],
-            callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(0)],
-        )
-        y_pred = model.predict(X_te)
-
-        m = compute_metrics(y_te, y_pred)
-        scores.append(m)
-        log.info(f"  LGB Fold {fold+1}: MAE={m['mae']:.2f}  RMSE={m['rmse']:.2f}  R²={m['r2']:.3f}")
-
-    model_final = lgb.LGBMRegressor(**lgb_params).fit(X, y)
-
-    return _aggregate_scores(scores, "LightGBM"), model_final
+    X_sample = X.sample(min(max_rows, len(X)), random_state=42)
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_vals = explainer.shap_values(X_sample)
+        df_shap = pd.DataFrame({
+            "feature":     X_sample.columns,
+            "shap_abs_mean": np.abs(shap_vals).mean(axis=0),
+        }).sort_values("shap_abs_mean", ascending=False).reset_index(drop=True)
+        log.info(f"SHAP computed for {model_name} ({len(X_sample)} samples)")
+        return df_shap
+    except Exception as exc:
+        log.warning(f"SHAP computation failed: {exc}")
+        return None
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 6. Əsas experiment funksiyası
+# Error analysis
+# ════════════════════════════════════════════════════════════════════════════
+
+def error_analysis(
+    model,
+    X: pd.DataFrame,
+    y: pd.Series,
+    timestamps: pd.Series,
+    model_name: str,
+) -> pd.DataFrame:
+    """
+    Compute prediction errors segmented by hour, weekday, and season.
+    Reveals systematic bias patterns (e.g. rush-hour underestimation).
+    """
+    try:
+        if model_name == "LSTM":
+            preds = model.predict(X.values)
+            # LSTM drops seq_len rows from the front
+            seq_len = model.seq_len
+            y_aligned = y.values[seq_len:]
+            ts_aligned = pd.to_datetime(timestamps).values[seq_len:]
+        else:
+            preds = model.predict(X)
+            y_aligned = y.values
+            ts_aligned = pd.to_datetime(timestamps).values
+
+        n = min(len(preds), len(y_aligned))
+        df_err = pd.DataFrame({
+            "timestamp": ts_aligned[:n],
+            "actual":    y_aligned[:n],
+            "predicted": preds[:n],
+        })
+        df_err["error"]    = df_err["predicted"] - df_err["actual"]
+        df_err["abs_error"]= df_err["error"].abs()
+        df_err["hour"]     = pd.DatetimeIndex(df_err["timestamp"]).hour
+        df_err["weekday"]  = pd.DatetimeIndex(df_err["timestamp"]).dayofweek
+        df_err["month"]    = pd.DatetimeIndex(df_err["timestamp"]).month
+        df_err["season"]   = df_err["month"].map({
+            12: "Winter", 1: "Winter", 2: "Winter",
+            3:  "Spring", 4: "Spring", 5: "Spring",
+            6:  "Summer", 7: "Summer", 8: "Summer",
+            9:  "Autumn",10: "Autumn",11: "Autumn",
+        })
+        return df_err
+    except Exception as exc:
+        log.warning(f"Error analysis failed: {exc}")
+        return pd.DataFrame()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Main experiment
 # ════════════════════════════════════════════════════════════════════════════
 
 def run_experiment(
     X: pd.DataFrame,
     y: pd.Series,
+    timestamps: pd.Series | None = None,
     n_splits: int = 5,
     save_model: bool = True,
-) -> tuple[pd.DataFrame, object]:
+    run_lstm: bool = True,
+    run_prophet: bool = False,
+) -> tuple[pd.DataFrame, object, dict]:
     """
-    3 modeli TimeSeriesSplit ilə müqayisə et.
+    Run the full 5-model experiment.
 
     Args:
-        X: feature matrix (build_features() çıxışı)
-        y: hədəf sütun
-        n_splits: TimeSeriesSplit fold sayı
-        save_model: ən yaxşı modeli disk-ə saxla
+        X:           Feature matrix (from build_features)
+        y:           PM2.5 target series
+        timestamps:  DatetimeSeries aligned with X/y (for Prophet + error analysis)
+        n_splits:    TimeSeriesSplit folds
+        save_model:  Persist best model + results to outputs/
+        run_lstm:    Include LSTM (slow; requires torch)
+        run_prophet: Include Prophet (requires prophet package)
 
     Returns:
-        results_df: model müqayisə cədvəli
-        best_model: ən yaxşı model obyekti
+        (results_df, best_model, artifacts)
+        artifacts: {shap_df, error_df}
     """
-    log.info("=" * 50)
-    log.info("Model Experiment Başlayır")
-    log.info(f"Dataset: {len(X):,} sətir × {X.shape[1]} feature")
-    log.info(f"TimeSeriesSplit: {n_splits} fold")
-    log.info("=" * 50)
+    log.info("=" * 60)
+    log.info("AirWatch AZ — Model Experiment")
+    log.info(f"Dataset: {len(X):,} rows × {X.shape[1]} features")
+    log.info(f"TimeSeriesSplit: {n_splits} folds")
+    log.info("=" * 60)
 
     tscv    = TimeSeriesSplit(n_splits=n_splits)
     results = []
     models  = {}
 
-    # ── Baseline ────────────────────────────────────────────────────────
-    log.info("\n[1/3] Persistence Baseline...")
-    scores_base = persistence_baseline(X, y, tscv)
-    results.append(scores_base)
+    # 1. Persistence
+    log.info("\n[1/5] Persistence Baseline...")
+    results.append(persistence_baseline(X, y, tscv))
 
-    # ── Ridge ───────────────────────────────────────────────────────────
-    log.info("\n[2/3] Ridge Regression...")
+    # 2. Ridge
+    log.info("\n[2/5] Ridge Regression...")
     scores_ridge, model_ridge = train_ridge(X, y, tscv)
     results.append(scores_ridge)
     models["Ridge"] = model_ridge
 
-    # ── Random Forest ───────────────────────────────────────────────────
-    log.info("\n[3/3] Random Forest...")
+    # 3. Random Forest
+    log.info("\n[3/5] Random Forest...")
     scores_rf, model_rf = train_random_forest(X, y, tscv)
     results.append(scores_rf)
     models["RandomForest"] = model_rf
 
-    # ── LightGBM (əgər qurulubsa) ───────────────────────────────────────
-    try:
-        import lightgbm  # noqa
-        log.info("\n[4/4] LightGBM...")
-        scores_lgb, model_lgb = train_lightgbm(X, y, tscv)
-        if scores_lgb:
-            results.append(scores_lgb)
-            models["LightGBM"] = model_lgb
-    except ImportError:
-        log.info("LightGBM keçildi (qurulmayıb)")
+    # 4. LightGBM
+    log.info("\n[4/5] LightGBM...")
+    scores_lgb, model_lgb = train_lightgbm(X, y, tscv)
+    if scores_lgb:
+        results.append(scores_lgb)
+        models["LightGBM"] = model_lgb
 
-    # ── Nəticə cədvəli ──────────────────────────────────────────────────
-    df_results = pd.DataFrame(results).set_index("model")
-    df_results = df_results.sort_values("mae")
+    # 5. LSTM
+    if run_lstm:
+        log.info("\n[5/5] LSTM (PyTorch)...")
+        scores_lstm, model_lstm = train_lstm(X, y, tscv)
+        if scores_lstm:
+            results.append(scores_lstm)
+            models["LSTM"] = model_lstm
 
-    print("\n" + "=" * 65)
-    print("  MODEL MÜQAYİSƏ CƏDVƏLİ (TimeSeriesSplit, n_splits={})".format(n_splits))
-    print("=" * 65)
-    print(df_results.to_string())
-    print("=" * 65)
-    print("  * MAE/RMSE: μg/m³ ilə  |  MAPE: %  |  R²: 0–1 arası")
-    print("  ⚠️  Bu dəyərlər ± std deviation — ortalamadır")
-    print("=" * 65)
+    # 6. Prophet (optional)
+    if run_prophet and timestamps is not None:
+        log.info("\n[+] Prophet...")
+        weather_cols = [c for c in ["temp", "humidity", "wind_speed", "precip"] if c in X.columns]
+        regressors = X[weather_cols] if weather_cols else None
+        scores_ph, model_ph = train_prophet(timestamps, y, tscv, regressors)
+        if scores_ph:
+            results.append(scores_ph)
+            models["Prophet"] = model_ph
 
-    # ── Ən yaxşı model ──────────────────────────────────────────────────
-    best_name  = df_results["mae"].idxmin()
-    best_model = models.get(best_name)
-    log.info(f"\nƏn yaxşı model: {best_name} (MAE={df_results.loc[best_name,'mae']:.2f})")
+    # ── Leaderboard ──────────────────────────────────────────────────────────
+    df_results = pd.DataFrame(results).set_index("model").sort_values("mae")
 
-    # ── Model saxla ─────────────────────────────────────────────────────
+    print("\n" + "=" * 70)
+    print("  AIRWATCH AZ — MODEL LEADERBOARD  (TimeSeriesSplit, n={})".format(n_splits))
+    print("=" * 70)
+    display_cols = ["mae", "mae_std", "rmse", "rmse_std", "mape", "r2"]
+    display_cols = [c for c in display_cols if c in df_results.columns]
+    print(df_results[display_cols].round(3).to_string())
+    print("=" * 70)
+    print("  MAE / RMSE in μg/m³  |  MAPE in %  |  R²: higher is better")
+    print("=" * 70 + "\n")
+
+    # ── Best model selection (by MAE, excluding baselines) ───────────────────
+    candidate_order = ["LightGBM", "LSTM", "RandomForest", "Ridge"]
+    best_name  = next((n for n in candidate_order if n in models), None)
+    best_model = models.get(best_name) if best_name else None
+
+    if best_name:
+        log.info(f"Best model: {best_name} (MAE={df_results.loc[best_name, 'mae']:.3f})")
+
+    # ── SHAP analysis ─────────────────────────────────────────────────────────
+    shap_df = None
+    if best_name and best_model and best_name in ("LightGBM", "RandomForest"):
+        log.info("Computing SHAP feature importance...")
+        shap_df = compute_shap(best_model, X, best_name)
+        if shap_df is not None:
+            print("\nTop 10 Features (SHAP):")
+            print(shap_df.head(10).to_string(index=False))
+
+    # ── Error analysis ────────────────────────────────────────────────────────
+    error_df = pd.DataFrame()
+    if best_model and timestamps is not None:
+        log.info("Running error analysis...")
+        error_df = error_analysis(best_model, X, y, timestamps, best_name or "")
+
+        if not error_df.empty:
+            hourly_mae = error_df.groupby("hour")["abs_error"].mean()
+            worst_hour = int(hourly_mae.idxmax())
+            best_hour  = int(hourly_mae.idxmin())
+            log.info(f"Error by hour: worst={worst_hour:02d}:00 ({hourly_mae[worst_hour]:.2f} μg/m³), "
+                     f"best={best_hour:02d}:00 ({hourly_mae[best_hour]:.2f} μg/m³)")
+            seasonal_mae = error_df.groupby("season")["abs_error"].mean().sort_values(ascending=False)
+            log.info(f"Error by season:\n{seasonal_mae.round(2)}")
+
+    # ── Persist artifacts ─────────────────────────────────────────────────────
     if save_model and best_model:
         model_path = MODEL_DIR / "best_model.pkl"
-        joblib.dump({"model": best_model, "name": best_name, "features": list(X.columns)}, model_path)
-        log.info(f"Model saxlanıldı: {model_path}")
+        joblib.dump({
+            "model":      best_model,
+            "name":       best_name,
+            "features":   list(X.columns),
+            "n_samples":  len(X),
+            "n_features": X.shape[1],
+        }, model_path)
+        log.info(f"Model saved: {model_path}")
 
-        # Nəticəni JSON-a yaz (README üçün)
+        # Results JSON
         results_path = MODEL_DIR / "results.json"
         results_path.write_text(
             json.dumps(df_results.reset_index().to_dict(orient="records"), indent=2)
         )
-        log.info(f"Nəticələr saxlanıldı: {results_path}")
 
-    return df_results, best_model
+        # SHAP CSV
+        if shap_df is not None:
+            shap_df.to_csv(MODEL_DIR / "shap_importance.csv", index=False)
 
+        # Error analysis CSV
+        if not error_df.empty:
+            error_df.to_csv(MODEL_DIR / "error_analysis.csv", index=False)
 
-# ════════════════════════════════════════════════════════════════════════════
-# Köməkçi funksiyalar
-# ════════════════════════════════════════════════════════════════════════════
+        log.info(f"Artifacts saved to {MODEL_DIR}/")
 
-def _aggregate_scores(scores: list[dict], model_name: str) -> dict:
-    """Bütün fold nəticələrini ortalama ± std kimi topla."""
-    metrics = ["mae", "rmse", "mape", "r2"]
-    result  = {"model": model_name}
-    for m in metrics:
-        vals = [s[m] for s in scores]
-        result[m]           = round(np.mean(vals), 3)
-        result[f"{m}_std"]  = round(np.std(vals), 3)
-    return result
+    return df_results, best_model, {"shap": shap_df, "errors": error_df}
 
 
 def load_model(path: str = "outputs/best_model.pkl") -> tuple[object, str, list]:
-    """Saxlanılmış modeli yüklə."""
     data = joblib.load(path)
     return data["model"], data["name"], data["features"]
 
 
 if __name__ == "__main__":
-    # Test — demo data ilə
     from src.data_pipeline import fetch_all
     from src.features import build_features
 
-    df = fetch_all(days=180)
+    df = fetch_all(days=365)
     X, y, ts = build_features(df)
-    results, best = run_experiment(X, y, n_splits=5)
+    results, best, artifacts = run_experiment(X, y, ts, n_splits=5)

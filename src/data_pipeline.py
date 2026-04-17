@@ -1,66 +1,46 @@
 """
 AirWatch AZ — Data Pipeline
 ============================
-WAQI API  → PM2.5, NO2, O3 (saatlıq)
-Open-Meteo → temperatur, külək, nəmlik (saatlıq)
+WAQI API  → PM2.5, NO2, O3  (current reading)
+Open-Meteo → temperature, wind, humidity (hourly archive)
 
-İstifadə:
+Usage:
     from src.data_pipeline import fetch_all
     df = fetch_all(days=365)
 """
 
-import requests
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from pathlib import Path
-import time
 import logging
+import time
+from datetime import datetime, timedelta
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
+import numpy as np
+import pandas as pd
+import requests
+
+from src.config import (
+    BAKU_LAT,
+    BAKU_LON,
+    DATA_DIR,
+    WAQI_STATIONS,
+    get_waqi_token,
+)
+
 log = logging.getLogger(__name__)
 
-# ── Konfiqurasiya ─────────────────────────────────────────────────────────────
-import os
-
-def _get_waqi_token() -> str:
-    return "93985efd480af4dd939f5f13e3ccb2d6a63cf2b9"   # ← bu sətiri əlavə et
-    token = os.getenv("WAQI_TOKEN", "")
-    ...
-    if token and token != "YOUR_WAQI_TOKEN":
-        return token
-    try:
-        import streamlit as st
-        return st.secrets.get("WAQI_TOKEN", "")
-    except Exception:
-        return ""
-
-WAQI_TOKEN   = _get_waqi_token()
-BAKU_LAT     = 40.4093
-BAKU_LON     = 49.8671
-DATA_DIR     = Path("data/raw")
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 
 # ════════════════════════════════════════════════════════════════════════════
-# 1. WAQI — Hava Keyfiyyəti Datası
+# 1. WAQI — Air Quality Data
 # ════════════════════════════════════════════════════════════════════════════
 
-# Düzgün endpoint: @ID yox, şəhər adı
-WAQI_STATIONS = {
-    "baku":      "baku",
-    "sumgayit":  "sumgayit",
-}
-
-
-def fetch_waqi_current(station_id: str) -> dict | None:
-    """Bir stansiyadan cari AQI dəyərini çək."""
-    url = f"https://api.waqi.info/feed/{station_id}/?token={WAQI_TOKEN}"
+def fetch_waqi_current(station_id: str, token: str) -> dict | None:
+    """Fetch the current AQI reading from a single WAQI station."""
+    url = f"https://api.waqi.info/feed/{station_id}/?token={token}"
     try:
         resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
         data = resp.json()
-        if data["status"] != "ok":
-            log.warning(f"WAQI status not ok for {station_id}")
+        if data.get("status") != "ok":
+            log.warning(f"WAQI status != ok for {station_id}: {data.get('data')}")
             return None
 
         iaqi = data["data"]["iaqi"]
@@ -71,84 +51,58 @@ def fetch_waqi_current(station_id: str) -> dict | None:
             "pm10":      iaqi.get("pm10", {}).get("v"),
             "no2":       iaqi.get("no2",  {}).get("v"),
             "o3":        iaqi.get("o3",   {}).get("v"),
-            "aqi":       data["data"]["aqi"],
+            "aqi":       int(data["data"]["aqi"]) if data["data"]["aqi"] != "-" else None,
         }
-    except Exception as e:
-        log.error(f"WAQI fetch error ({station_id}): {e}")
+    except Exception as exc:
+        log.error(f"WAQI fetch error ({station_id}): {exc}")
         return None
 
 
-def fetch_waqi_historical(days: int = 365) -> pd.DataFrame:
+def fetch_waqi_all_stations() -> pd.DataFrame:
     """
-    WAQI tarixi datası — saatlıq PM2.5 cəkir.
-    Not: WAQI pulsuz API-da tarixi data məhduddur.
-    Alternativ: aqicn.org/data-platform/ (premium) və ya aşağıdakı kimi
-    cari datanı gündəlik topla (GitHub Actions ilə).
+    Fetch current readings from all configured stations.
+    Returns an empty DataFrame if no token is configured.
     """
+    token = get_waqi_token()
+    if not token:
+        log.warning("No WAQI token configured — skipping real-time fetch")
+        return pd.DataFrame()
+
     records = []
-    for station_id in WAQI_STATIONS.values():
-        rec = fetch_waqi_current(station_id)
+    for name, station_id in WAQI_STATIONS.items():
+        rec = fetch_waqi_current(station_id, token)
         if rec:
             records.append(rec)
-        time.sleep(0.5)   # rate limiting
+        time.sleep(0.3)   # respect rate limits
 
     if not records:
-        log.warning("WAQI-dən data gəlmədi — demo data istifadə edilir")
-        return _generate_demo_data(days)
+        log.warning("No WAQI data received from any station")
+        return pd.DataFrame()
 
-    df_real = pd.DataFrame(records)
-    df_demo = _generate_demo_data(days)
-    df_demo = df_demo[df_demo["timestamp"] < pd.to_datetime(df_real["timestamp"].min()).tz_localize(None)]
-    df = pd.concat([df_demo, df_real], ignore_index=True)
-    log.info(f"WAQI: {len(df)} sətir ({len(df_real)} real + demo)")
+    df = pd.DataFrame(records)
+    log.info(f"WAQI: {len(df)} live readings from {len(records)} stations")
     return df
 
 
-def _generate_demo_data(days: int) -> pd.DataFrame:
-    """
-    Real WAQI data olmadıqda realist demo data generat et.
-    Bu yalnız local test üçündür — CV-də real data istifadə et.
-    """
-    log.info("Demo data generasiyası başlayır...")
-    rng   = np.random.default_rng(42)
-    n     = days * 24
-    idx   = pd.date_range(end=datetime.now(), periods=n, freq="h")
-
-    # Realist Baku PM2.5 simulation
-    hour_effect  = 8  * np.sin(2 * np.pi * idx.hour / 24 - np.pi/2)
-    week_effect  = -5 * (idx.dayofweek >= 5).astype(float)
-    season_effect= 10 * np.sin(2 * np.pi * idx.dayofyear / 365)
-    noise        = rng.normal(0, 4, n)
-    pm25         = np.clip(35 + hour_effect + week_effect + season_effect + noise, 5, 180)
-
-    return pd.DataFrame({
-        "timestamp": idx,
-        "station":   "baku_demo",
-        "pm25":      pm25.round(1),
-        "aqi":       (pm25 * 1.8).round(0),
-        "no2":       np.clip(rng.normal(40, 10, n), 5, 120).round(1),
-        "o3":        np.clip(rng.normal(25, 8,  n), 5, 80).round(1),
-    })
-
-
 # ════════════════════════════════════════════════════════════════════════════
-# 2. Open-Meteo — Hava Məlumatı (Pulsuz, API key lazım deyil)
+# 2. Open-Meteo — Weather Archive (free, no key required)
 # ════════════════════════════════════════════════════════════════════════════
 
 def fetch_weather(days: int = 365) -> pd.DataFrame:
     """
-    Open-Meteo API-dən Bakı üçün saatlıq hava tarixi çək.
-    Tamamilə pulsuz, API key tələb etmir.
+    Pull hourly historical weather for Baku from Open-Meteo.
+    Falls back to synthetic data if the API is unavailable.
     """
+    # Open-Meteo archive has ~7-day lag
     end_date   = (datetime.now() - timedelta(days=7)).date()
     start_date = end_date - timedelta(days=days)
 
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
-        "latitude":            BAKU_LAT,
-        "longitude":           BAKU_LON,
-        "start_date":          start_date.isoformat(),
-        "end_date":            end_date.isoformat(),
+        "latitude":   BAKU_LAT,
+        "longitude":  BAKU_LON,
+        "start_date": start_date.isoformat(),
+        "end_date":   end_date.isoformat(),
         "hourly": ",".join([
             "temperature_2m",
             "relative_humidity_2m",
@@ -161,137 +115,201 @@ def fetch_weather(days: int = 365) -> pd.DataFrame:
     }
 
     try:
-        log.info(f"Open-Meteo çəkilir: {start_date} → {end_date}")
+        log.info(f"Open-Meteo: fetching {start_date} → {end_date}")
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
-        j    = resp.json()
-        hourly = j["hourly"]
+        hourly = resp.json()["hourly"]
 
         df = pd.DataFrame({
-            "timestamp":   pd.to_datetime(hourly["time"]),
-            "temp":        hourly["temperature_2m"],
-            "humidity":    hourly["relative_humidity_2m"],
-            "wind_speed":  hourly["wind_speed_10m"],
-            "wind_dir":    hourly["wind_direction_10m"],
-            "precip":      hourly["precipitation"],
-            "pressure":    hourly["surface_pressure"],
+            "timestamp":  pd.to_datetime(hourly["time"]),
+            "temp":       hourly["temperature_2m"],
+            "humidity":   hourly["relative_humidity_2m"],
+            "wind_speed": hourly["wind_speed_10m"],
+            "wind_dir":   hourly["wind_direction_10m"],
+            "precip":     hourly["precipitation"],
+            "pressure":   hourly["surface_pressure"],
         })
-        log.info(f"Open-Meteo: {len(df):,} saat, {df.timestamp.min()} → {df.timestamp.max()}")
+        log.info(f"Open-Meteo: {len(df):,} rows ({df.timestamp.min()} → {df.timestamp.max()})")
         return df
 
-    except Exception as e:
-        log.error(f"Open-Meteo xətası: {e}")
-        # Demo hava datası
-        idx = pd.date_range(
-            end=datetime.now(), periods=days * 24, freq="h"
-        )
-        rng = np.random.default_rng(42)
-        return pd.DataFrame({
-            "timestamp":  idx,
-            "temp":       rng.normal(18, 10, len(idx)).round(1),
-            "humidity":   rng.uniform(40, 80, len(idx)).round(1),
-            "wind_speed": rng.exponential(3, len(idx)).round(1),
-            "wind_dir":   rng.uniform(0, 360, len(idx)).round(0),
-            "precip":     np.maximum(0, rng.normal(0.1, 0.5, len(idx))).round(2),
-            "pressure":   rng.normal(1013, 5, len(idx)).round(1),
-        })
+    except Exception as exc:
+        log.error(f"Open-Meteo error: {exc} — using synthetic fallback")
+        return _synthetic_weather(days)
+
+
+def _synthetic_weather(days: int) -> pd.DataFrame:
+    """Realistic synthetic weather for Baku (fallback only)."""
+    idx = pd.date_range(end=datetime.now(), periods=days * 24, freq="h")
+    rng = np.random.default_rng(42)
+    doy = idx.dayofyear
+
+    # Seasonal temperature: Baku averages ~14°C annual, hot summers
+    temp_seasonal = 14 + 12 * np.sin(2 * np.pi * (doy - 80) / 365)
+    temp = temp_seasonal + rng.normal(0, 3, len(idx))
+
+    return pd.DataFrame({
+        "timestamp":  idx,
+        "temp":       temp.round(1),
+        "humidity":   np.clip(60 + 15 * np.sin(2 * np.pi * doy / 365) + rng.normal(0, 8, len(idx)), 20, 95).round(1),
+        "wind_speed": np.maximum(0, rng.exponential(4, len(idx))).round(1),
+        "wind_dir":   rng.uniform(0, 360, len(idx)).round(0),
+        "precip":     np.maximum(0, rng.normal(0.05, 0.3, len(idx))).round(2),
+        "pressure":   (1013 + rng.normal(0, 5, len(idx))).round(1),
+    })
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 3. Birləşdir + Təmizlə
+# 3. Synthetic PM2.5 (for historical backfill when WAQI history is unavailable)
 # ════════════════════════════════════════════════════════════════════════════
 
-def merge_and_clean(df_pm: pd.DataFrame, df_wx: pd.DataFrame) -> pd.DataFrame:
+def _synthetic_pm25(index: pd.DatetimeIndex, weather_df: pd.DataFrame | None = None) -> pd.Series:
     """
-    PM2.5 + hava datasını birləşdir, təmizlə.
+    Physics-informed synthetic PM2.5 for Baku.
+    Incorporates hour-of-day, weekday, season, and — when available —
+    temperature and wind speed effects.
     """
-    # Timestamp-ləri saata yuvarlaqlaşdır
-    df_pm["timestamp"] = pd.to_datetime(df_pm["timestamp"]).dt.tz_localize(None).dt.floor("h")
+    rng = np.random.default_rng(42)
+    n   = len(index)
+
+    # Rush-hour peak at 08:00 and 18:00
+    hour_effect  = 8 * (
+        np.exp(-0.5 * ((index.hour - 8) / 2) ** 2) +
+        np.exp(-0.5 * ((index.hour - 18) / 2) ** 2)
+    )
+    week_effect  = -4 * (index.dayofweek >= 5).astype(float)
+    season_effect= 12 * np.sin(2 * np.pi * (index.dayofyear - 15) / 365)  # winter peak
+    noise        = rng.normal(0, 3.5, n)
+
+    pm25 = 32 + hour_effect + week_effect + season_effect + noise
+
+    if weather_df is not None and len(weather_df) == n:
+        # Temperature inversion: low temp → pollution trapped
+        temp_effect = -0.3 * weather_df["temp"].values
+        # Wind dispersal: high wind → lower PM2.5
+        wind_effect = -1.5 * np.minimum(weather_df["wind_speed"].values, 15)
+        # Rain washout
+        rain_effect = -8 * (weather_df["precip"].values > 0.5).astype(float)
+        pm25 += temp_effect + wind_effect + rain_effect
+
+    return pd.Series(np.clip(pm25, 5, 200).round(1), index=index)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 4. Merge & Clean
+# ════════════════════════════════════════════════════════════════════════════
+
+def merge_and_clean(df_wx: pd.DataFrame, df_waqi: pd.DataFrame | None = None) -> pd.DataFrame:
+    """
+    Merge weather backbone with WAQI point readings.
+    Strategy:
+      - Open-Meteo provides the full hourly time axis (backbone).
+      - WAQI current readings are joined by nearest timestamp.
+      - Remaining PM2.5 gaps are filled with synthetic data.
+    """
+    df_wx = df_wx.copy()
     df_wx["timestamp"] = pd.to_datetime(df_wx["timestamp"]).dt.tz_localize(None).dt.floor("h")
+    df = df_wx.sort_values("timestamp").reset_index(drop=True)
 
-    # WAQI yalnız cari an verir — Open-Meteo tarix aralığını əsas götür
-    df = df_wx.copy()
-    # PM2.5 — demo data əsasında doldur, son real dəyəri əlavə et
-    from src.data_pipeline import _generate_demo_data
-    df_demo_pm = _generate_demo_data(len(df_wx) // 24)
-    df_demo_pm["timestamp"] = pd.to_datetime(df_demo_pm["timestamp"]).dt.tz_localize(None).dt.floor("h")
-    df = pd.merge(df_wx, df_demo_pm[["timestamp","pm25","aqi","no2","o3"]], on="timestamp", how="left")
-    # Son real WAQI dəyərini əlavə et
-    if len(df_pm) > 0:
-        last_real = df_pm.iloc[-1]
-        df.loc[df["timestamp"] == last_real["timestamp"], "pm25"] = last_real["pm25"]
-    log.info(f"Merge sonrası: {len(df):,} sətir")
+    # Attach real WAQI data where available
+    if df_waqi is not None and not df_waqi.empty:
+        df_waqi = df_waqi.copy()
+        df_waqi["timestamp"] = pd.to_datetime(df_waqi["timestamp"]).dt.tz_localize(None).dt.floor("h")
+        waqi_cols = [c for c in ["timestamp", "pm25", "pm10", "no2", "o3", "aqi"] if c in df_waqi.columns]
+        df = pd.merge(df, df_waqi[waqi_cols], on="timestamp", how="left")
+        log.info(f"WAQI join: {df['pm25'].notna().sum()} real PM2.5 points merged")
+    else:
+        for col in ("pm25", "pm10", "no2", "o3", "aqi"):
+            df[col] = np.nan
 
-    # ── Outlier temizliyi ─────────────────────────────────────────────────
-    # Mənfi PM2.5 → 0 ilə əvəz et (fiziki mümkünsüz)
-    df["pm25"] = df["pm25"].clip(lower=0)
+    # Fill PM2.5 gaps with physics-informed synthetic
+    missing_mask = df["pm25"].isna()
+    if missing_mask.any():
+        synth = _synthetic_pm25(
+            pd.DatetimeIndex(df.loc[missing_mask, "timestamp"]),
+            df.loc[missing_mask, ["temp", "wind_speed", "precip"]].reset_index(drop=True)
+                if all(c in df.columns for c in ["temp", "wind_speed", "precip"]) else None,
+        )
+        df.loc[missing_mask, "pm25"] = synth.values
+        log.info(f"Synthetic fill: {missing_mask.sum():,} PM2.5 rows generated")
 
-    # IQR × 3 üst hədd — clip et, sil yox (vaxt sırası bütövlüyü)
-    for col in ["pm25", "no2", "o3"]:
-        if col not in df.columns:
-            continue
+    # Fill NO2/O3 gaps from synthetic ratios
+    if df["no2"].isna().any():
+        df["no2"] = df["no2"].fillna(df["pm25"] * 1.1 + np.random.default_rng(1).normal(0, 5, len(df)))
+        df["no2"] = df["no2"].clip(lower=0).round(1)
+    if df["o3"].isna().any():
+        df["o3"] = df["o3"].fillna(df["pm25"] * 0.7 + np.random.default_rng(2).normal(0, 4, len(df)))
+        df["o3"] = df["o3"].clip(lower=0).round(1)
+
+    # ── Outlier handling (clip, not drop — preserve time axis) ───────────
+    for col in ("pm25", "no2", "o3"):
         q1, q3 = df[col].quantile([0.25, 0.75])
         iqr     = q3 - q1
         upper   = q3 + 3 * iqr
-        n_clip  = (df[col] > upper).sum()
+        n_clip  = int((df[col] > upper).sum())
         if n_clip:
-            log.info(f"  {col}: {n_clip} outlier → {upper:.1f}-ə clip edildi")
-        df[col] = df[col].clip(upper=upper)
+            log.info(f"  {col}: {n_clip} outliers clipped at {upper:.1f}")
+        df[col] = df[col].clip(lower=0, upper=upper)
 
-    # ── Missing value imputation ──────────────────────────────────────────
-    # Hava feature-ları — forward fill, sonra backward fill
+    # ── Weather imputation ────────────────────────────────────────────────
     wx_cols = ["temp", "humidity", "wind_speed", "wind_dir", "precip", "pressure"]
     df[wx_cols] = df[wx_cols].ffill().bfill()
 
-    # PM2.5 — interpolate (qonşu dəyərlərlə)
-    df["pm25"] = df["pm25"].interpolate(method="linear", limit=3)
-
-    # Hələ də NaN varsa — sil
+    # ── Drop residual NaN ─────────────────────────────────────────────────
     before = len(df)
-    df = df.dropna(subset=["pm25"])
-    after  = len(df)
-    if before != after:
-        log.info(f"  {before - after} sətir PM2.5 NaN kimi silindi")
+    df = df.dropna(subset=["pm25"]).reset_index(drop=True)
+    if (dropped := before - len(df)):
+        log.warning(f"Dropped {dropped} rows with NaN PM2.5")
 
-    df = df.sort_values("timestamp").reset_index(drop=True)
-    log.info(f"Təmizlənmiş dataset: {len(df):,} sətir")
+    log.info(f"Dataset ready: {len(df):,} rows | {df.timestamp.min()} → {df.timestamp.max()}")
     return df
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 4. Əsas funksiya
+# 5. Main entry point
 # ════════════════════════════════════════════════════════════════════════════
 
-def fetch_all(days: int = 365, save: bool = True) -> pd.DataFrame:
+def fetch_all(
+    days: int = 365,
+    save: bool = True,
+    persist_db: bool = False,
+) -> pd.DataFrame:
     """
-    Tam pipeline: API → merge → clean → CSV.
+    Full ETL pipeline: APIs → merge → clean → (optional) persist.
 
     Args:
-        days: neçə günlük tarixi data
-        save: data/raw/ qovluğuna saxla
+        days:       How many days of historical data to fetch.
+        save:       Save CSV snapshot to data/raw/.
+        persist_db: Also write to DuckDB (requires duckdb installed).
 
     Returns:
-        pd.DataFrame — təmizlənmiş, birləşdirilmiş dataset
+        Cleaned DataFrame with PM2.5 + weather features.
     """
-    log.info("=" * 50)
-    log.info("AirWatch AZ — Data Pipeline başlayır")
-    log.info("=" * 50)
+    log.info("=" * 55)
+    log.info("AirWatch AZ — ETL Pipeline")
+    log.info("=" * 55)
 
-    df_pm = fetch_waqi_historical(days)
-    df_wx = fetch_weather(days)
-    df    = merge_and_clean(df_pm, df_wx)
+    df_waqi = fetch_waqi_all_stations()
+    df_wx   = fetch_weather(days)
+    df      = merge_and_clean(df_wx, df_waqi if not df_waqi.empty else None)
 
     if save:
         out = DATA_DIR / f"baku_airquality_{datetime.now().strftime('%Y%m%d')}.csv"
         df.to_csv(out, index=False)
-        log.info(f"Data saxlanıldı: {out}")
+        log.info(f"CSV saved: {out}")
 
-    log.info(f"Pipeline tamamlandı: {len(df):,} sətir hazır")
+    if persist_db:
+        try:
+            from src.database import upsert_readings
+            is_demo = df_waqi.empty
+            upsert_readings(df, is_demo=is_demo)
+        except Exception as exc:
+            log.warning(f"DB persist skipped: {exc}")
+
+    log.info(f"ETL complete: {len(df):,} rows ready")
     return df
 
 
 if __name__ == "__main__":
     df = fetch_all(days=365)
-    print(df.tail())
-    print(df.dtypes)
+    print(df.tail(3).to_string())
     print(df.describe().round(2))

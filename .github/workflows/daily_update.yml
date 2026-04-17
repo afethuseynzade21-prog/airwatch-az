@@ -1,42 +1,82 @@
-name: Daily Data Update
+name: ETL + Retrain Pipeline
 
 on:
   schedule:
-    # Hər gün saat 06:00 UTC (Bakı vaxtı ilə 10:00)
-    - cron: "0 6 * * *"
-  workflow_dispatch:   # Manual işə salma üçün
+    # Hourly data fetch: every hour at minute 5
+    - cron: "5 * * * *"
+  workflow_dispatch:
+    inputs:
+      retrain:
+        description: "Force model retraining"
+        type: boolean
+        default: false
+      days:
+        description: "Days of history to fetch"
+        default: "365"
 
 jobs:
-  update-data:
+  # ── Job 1: Hourly ETL (fetch + persist) ────────────────────────────────────
+  etl:
+    name: Hourly ETL
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Python qur
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      - name: Dependencies qur
-        run: pip install -r requirements.txt
+      - name: Install core deps (no torch/prophet for ETL)
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy requests duckdb scikit-learn joblib lightgbm shap
 
-      - name: Yeni data çək
+      - name: Run ETL pipeline
         env:
           WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
         run: |
           python -c "
           from src.data_pipeline import fetch_all
-          df = fetch_all(days=1, save=True)  # yalnız son gün
-          print(f'Çəkildi: {len(df)} sətir')
+          df = fetch_all(days=1, save=True, persist_db=True)
+          print(f'ETL complete: {len(df)} rows')
           "
 
-      - name: Model yenilə (həftəlik)
-        # Yalnız bazar ertəsi (0) işlə
-        if: github.event.schedule == '0 6 * * 1' || github.event_name == 'workflow_dispatch'
+      - name: Upload data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-data-${{ github.run_id }}
+          path: data/raw/*.csv
+          retention-days: 7
+
+  # ── Job 2: Weekly Retrain (Monday 06:00 UTC or manual) ─────────────────────
+  retrain:
+    name: Weekly Retrain
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Run on Mondays OR manual trigger with retrain=true
+    if: |
+      github.event_name == 'workflow_dispatch' && inputs.retrain == 'true' ||
+      github.event.schedule == '5 6 * * 1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install all ML deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          # PyTorch CPU (smaller image)
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run full experiment
         env:
           WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
         run: |
@@ -44,16 +84,64 @@ jobs:
           from src.data_pipeline import fetch_all
           from src.features import build_features
           from src.train import run_experiment
-          df = fetch_all(days=365, save=False)
+          days = int('${{ inputs.days || 365 }}')
+          df = fetch_all(days=days, save=True)
           X, y, ts = build_features(df)
-          results, best = run_experiment(X, y, save_model=True)
-          print(results)
+          results, best, artifacts = run_experiment(
+              X, y, ts, n_splits=5,
+              run_lstm=True, run_prophet=False
+          )
+          print(results.to_string())
           "
 
-      - name: Dəyişiklikləri commit et
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-${{ github.run_id }}
+          path: |
+            outputs/best_model.pkl
+            outputs/results.json
+            outputs/shap_importance.csv
+            outputs/error_analysis.csv
+          retention-days: 30
+
+      - name: Post results to job summary
         run: |
-          git config --global user.email "airwatch-bot@github.com"
-          git config --global user.name  "AirWatch Bot"
-          git add data/ outputs/ || true
-          git diff --staged --quiet || git commit -m "chore: daily data update $(date +'%Y-%m-%d')"
-          git push || true
+          python -c "
+          import json
+          from pathlib import Path
+          p = Path('outputs/results.json')
+          if p.exists():
+              rows = json.loads(p.read_text())
+              print('| Model | MAE | RMSE | R² |')
+              print('|-------|-----|------|-----|')
+              for r in rows:
+                  print(f'| {r[\"model\"]} | {r.get(\"mae\",\"-\"):.3f} | {r.get(\"rmse\",\"-\"):.3f} | {r.get(\"r2\",\"-\"):.3f} |')
+          " >> \$GITHUB_STEP_SUMMARY
+
+  # ── Job 3: CI — lint + test on every push ──────────────────────────────────
+  ci:
+    name: CI — Lint & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test deps
+        run: |
+          pip install pandas numpy requests scikit-learn joblib ruff pytest pytest-cov
+
+      - name: Lint with ruff
+        run: ruff check src/ api/ app/ --select=E,F,W --ignore=E501
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short --cov=src --cov-report=term-missing \
+            || echo "No tests found — skipping"

@@ -1,0 +1,64 @@
+version: "3.9"
+
+# AirWatch AZ — Full stack
+#
+# Services:
+#   dashboard — Streamlit (port 8501)
+#   api       — FastAPI   (port 8000)
+#
+# Usage:
+#   docker compose up                   # both services
+#   docker compose up dashboard         # dashboard only
+#   docker compose run --rm api python -m src.train  # retrain
+
+x-common: &common
+  build: .
+  env_file: .env
+  volumes:
+    - ./data:/app/data
+    - ./outputs:/app/outputs
+    - ./logs:/app/logs
+  restart: unless-stopped
+
+services:
+
+  dashboard:
+    <<: *common
+    container_name: airwatch-dashboard
+    command: >
+      streamlit run app/streamlit_app.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      --server.headless=true
+      --browser.gatherUsageStats=false
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    <<: *common
+    container_name: airwatch-api
+    command: >
+      uvicorn api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+      --log-level info
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      dashboard:
+        condition: service_healthy
+
+volumes:
+  data:
+  outputs:

@@ -1,17 +1,29 @@
-# Streamlit secrets — BUNU HEÇVAXT GITHUB-A YÜKLƏMƏ
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
 .streamlit/secrets.toml
+.env
 
-# Data faylları (böyük ola bilər)
+# ── Data ─────────────────────────────────────────────────────────────────────
 data/raw/*.csv
+data/db/*.duckdb       # DuckDB is a binary DB file — too large for git
 
-# Python
+# ── Model artifacts (large binaries) ─────────────────────────────────────────
+outputs/best_model.pkl
+outputs/*.pkl
+
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
-.env
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
 
-# Model outputs (opsional — deploy üçün lazım ola bilər)
-# outputs/*.pkl
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
