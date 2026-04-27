@@ -280,6 +280,34 @@ def load_model(path: str = "outputs/best_model.pkl") -> tuple[object, str, list]
     return data["model"], data["name"], data["features"]
 
 
+def save_shap_values(model, X, feature_names, output_dir="outputs"):
+    """SHAP dəyərlərini hesabla və saxla."""
+    try:
+        import shap
+        import matplotlib.pyplot as plt
+        from pathlib import Path
+
+        Path(output_dir).mkdir(exist_ok=True)
+
+        explainer = shap.Explainer(model, X, check_additivity=False)
+        shap_values = explainer(X[:500])
+
+        # SHAP summary plot
+        plt.figure(figsize=(10, 6))
+        shap.summary_plot(shap_values, X[:500], feature_names=feature_names,
+                         show=False, max_display=15)
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/shap_summary.png", dpi=150, bbox_inches="tight")
+        plt.close()
+
+        log.info(f"SHAP qrafiki saxlanıldı: {output_dir}/shap_summary.png")
+        return shap_values
+
+    except Exception as e:
+        log.warning(f"SHAP xətası: {e}")
+        return None
+
+
 if __name__ == "__main__":
     from src.data_pipeline import fetch_all
     from src.features import build_features
@@ -287,3 +315,4 @@ if __name__ == "__main__":
     df = fetch_all(days=365)
     X, y, ts = build_features(df)
     results, best, artifacts = run_experiment(X, y, ts, n_splits=5)
+    save_shap_values(best, X, list(X.columns))
