@@ -262,7 +262,7 @@ def merge_and_clean(df_pm: pd.DataFrame, df_wx: pd.DataFrame) -> pd.DataFrame:
 # 4. Əsas funksiya
 # ════════════════════════════════════════════════════════════════════════════
 
-def fetch_all(days: int = 365, save: bool = True) -> pd.DataFrame:
+def fetch_all(days: int = 365, save: bool = True, persist_db: bool = False) -> pd.DataFrame:
     """
     Tam pipeline: API → merge → clean → CSV.
 
