@@ -301,6 +301,19 @@ with tab2:
             st.metric("Ən Yaxşı Pəncərə", f"{min_row['pm25_pred']:.1f} μg/m³",
                       delta=f"+{min_row['horizon_h']} saat", delta_color="inverse")
 
+        # AQI forecast
+        if not fc_df.empty and "pm25_pred" in fc_df.columns:
+            def pm25_to_aqi(pm):
+                for c_lo, c_hi, i_lo, i_hi in [(0,12,0,50),(12.1,35.4,51,100),(35.5,55.4,101,150),(55.5,150.4,151,200)]:
+                    if c_lo <= pm <= c_hi:
+                        return round((i_hi-i_lo)/(c_hi-c_lo)*(pm-c_lo)+i_lo)
+                return 301
+            fc_df["aqi_pred"] = fc_df["pm25_pred"].apply(pm25_to_aqi)
+            st.divider()
+            st.markdown("**24h AQI Proqnozu**")
+            st.metric("Orta AQI", int(fc_df["aqi_pred"].mean()))
+            st.metric("Maks AQI", int(fc_df["aqi_pred"].max()))
+
         with st.expander("Tam proqnoz cədvəli"):
             st.dataframe(
                 fc_df[["target_time", "pm25_pred", "pm25_lower", "pm25_upper", "risk_label"]].rename(
