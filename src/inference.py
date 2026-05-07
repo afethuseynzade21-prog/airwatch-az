@@ -53,19 +53,27 @@ def classify_risk_series(pm25_series: pd.Series) -> pd.DataFrame:
 # ── Health recommendations (business layer) ───────────────────────────────────
 
 _HEALTH_MESSAGES = {
-    "low":      "✅ Air quality is good. Safe for all outdoor activities.",
-    "medium":   "⚠️ Sensitive groups (asthma, elderly, children) should limit prolonged outdoor exertion.",
-    "high":     "🚨 Reduce outdoor exercise. Wear N95 mask outdoors. Close windows.",
-    "critical": "🔴 Avoid all outdoor activity. Vulnerable individuals should stay indoors.",
-    "extreme":  "☣️ Emergency conditions. Evacuate sensitive populations. Contact local authorities.",
+    "low":      "✅ Hava keyfiyyəti yaxşıdır. Bütün açıq hava fəaliyyətləri təhlükəsizdir.",
+    "medium":   "⚠️ Astmalı şəxslər, yaşlılar və uşaqlar uzun müddətli açıq hava fəaliyyətini azaltsın.",
+    "high":     "🚨 Açıq hava idmanını azaldın. Çölə çıxarkən N95 maska taxın. Pəncərələri bağlayın.",
+    "critical": "🔴 Bütün açıq hava fəaliyyətlərindən çəkinin. Həssas şəxslər evdə qalsın.",
+    "extreme":  "☣️ Fövqəladə vəziyyət. Həssas əhalini təxliyə edin. Yerli səlahiyyətlərlə əlaqə saxlayın.",
+}
+
+_HEALTH_GROUPS = {
+    "low":      [],
+    "medium":   [" Astmalı şəxslər diqqətli olsun", " Yaşlılar açıq havada vaxtı azaltsın", " Uşaqlar üçün idman tədbirlərini qısaldın"],
+    "high":     [" Maska tövsiyə olunur", " Astmalı şəxslər evdə qalsın", " Yaşlılar çölə çıxmasın", " Uşaqların açıq hava fəaliyyəti dayandırılsın"],
+    "critical": ["Tənəffüs xəstəliyi olanlar xəstəxana ilə əlaqə saxlasın", " N95 maska mütləqdir", " Məktəb idman tədbirləri ləğv edilsin"],
+    "extreme":  ["🚨 Hamı evdə qalsın", " Təcili tibbi yardım hazır olsun", " Çöldə olmaq qadağandır"],
 }
 
 _POLICY_MESSAGES = {
-    "low":      "No policy action required.",
-    "medium":   "Issue public advisory for schools and healthcare facilities.",
-    "high":     "Activate Stage 1 protocol: restrict industrial emissions, increase public transport.",
-    "critical": "Activate Stage 2 protocol: mandatory traffic restrictions, industrial shutdown orders.",
-    "extreme":  "Activate Emergency protocol: coordinate with national health authorities immediately.",
+    "low":      "Heç bir siyasi tədbir tələb olunmur.",
+    "medium":   "Məktəblər və səhiyyə müəssisələri üçün ictimai xəbərdarlıq verin.",
+    "high":     "Mərhələ 1 protokolu: sənaye emissiyalarını məhdudlaşdırın, ictimai nəqliyyatı artırın.",
+    "critical": "Mərhələ 2 protokolu: məcburi trafik məhdudiyyətləri, sənaye dayandırma əmrləri.",
+    "extreme":  "Fövqəladə protokol: milli səhiyyə orqanları ilə dərhal əlaqə saxlayın.",
 }
 
 
@@ -73,6 +81,7 @@ def get_recommendations(risk_level: str) -> dict:
     return {
         "health": _HEALTH_MESSAGES.get(risk_level, ""),
         "policy": _POLICY_MESSAGES.get(risk_level, ""),
+        "groups": _HEALTH_GROUPS.get(risk_level, []),
     }
 
 

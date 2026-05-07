@@ -558,6 +558,43 @@ with tab3:
     except Exception as exc:
         st.error(f"Xəritə xətası: {exc}")
 
+    # 3D Pydeck
+    st.divider()
+    st.subheader("3D Çirklənmə Xəritəsi")
+    st.caption("Sütun hündürlüyü PM2.5 səviyyəsini göstərir. Rəng risk səviyyəsinə görə dəyişir.")
+    try:
+        import pydeck as pdk
+        latest_pm25 = float(df["pm25"].iloc[-1])
+        station_data = [
+            {"name": "Bakı Mərkəz",      "lat": 40.4093, "lon": 49.8671, "pm25": latest_pm25},
+            {"name": "Sumqayıt",         "lat": 40.5897, "lon": 49.6317, "pm25": latest_pm25 * 1.25},
+            {"name": "Binəqədi",         "lat": 40.4500, "lon": 49.8200, "pm25": latest_pm25 * 1.18},
+            {"name": "Sabunçu",          "lat": 40.4200, "lon": 49.9500, "pm25": latest_pm25 * 1.20},
+            {"name": "Bakı Hava limanı", "lat": 40.4675, "lon": 50.0466, "pm25": latest_pm25 * 0.85},
+            {"name": "Xırdalan",         "lat": 40.4450, "lon": 49.7450, "pm25": latest_pm25 * 0.90},
+        ]
+        def pm25_to_rgb(pm25):
+            if pm25 <= 12:    return [46, 204, 113]
+            elif pm25 <= 35:  return [241, 196, 15]
+            elif pm25 <= 55:  return [230, 126, 34]
+            elif pm25 <= 150: return [231, 76, 60]
+            else:             return [142, 68, 173]
+        import pandas as pd
+        df_3d = pd.DataFrame(station_data)
+        df_3d["color"]     = df_3d["pm25"].apply(pm25_to_rgb)
+        df_3d["elevation"] = df_3d["pm25"] * 150
+        layer = pdk.Layer("ColumnLayer", data=df_3d,
+            get_position=["lon", "lat"], get_elevation="elevation",
+            elevation_scale=1, radius=1500, get_fill_color="color",
+            pickable=True, auto_highlight=True)
+        view = pdk.ViewState(latitude=40.45, longitude=49.85, zoom=9, pitch=45, bearing=0)
+        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view,
+            tooltip={"text": "{name}\nPM2.5: {pm25} μg/m³"}))
+    except ImportError:
+        st.info("3D xəritə üçün: `pip install pydeck`")
+    except Exception as e:
+        st.error(f"3D xəritə xətası: {e}")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 4 — Model Laboratoriyası
