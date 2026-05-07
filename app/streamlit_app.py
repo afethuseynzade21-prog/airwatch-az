@@ -469,6 +469,29 @@ with tab2:
             st.metric("Orta AQI", int(fc_df["aqi_pred"].mean()))
             st.metric("Maks AQI", int(fc_df["aqi_pred"].max()))
 
+            # AQI kateqoriya paylanması
+            st.divider()
+            st.markdown("**AQI Paylanması**")
+            aqi_cats = {
+                "Yaxşı (0-50)":      int((fc_df["aqi_pred"] <= 50).sum()),
+                "Orta (51-100)":     int(((fc_df["aqi_pred"] > 50) & (fc_df["aqi_pred"] <= 100)).sum()),
+                "Zərərli (101-150)": int(((fc_df["aqi_pred"] > 100) & (fc_df["aqi_pred"] <= 150)).sum()),
+                "Çox Zərərli (151+)":int((fc_df["aqi_pred"] > 150).sum()),
+            }
+            colors = {"Yaxşı (0-50)": "#2ecc71", "Orta (51-100)": "#f1c40f",
+                      "Zərərli (101-150)": "#e67e22", "Çox Zərərli (151+)": "#e74c3c"}
+            for cat, count in aqi_cats.items():
+                if count > 0:
+                    pct = count / len(fc_df) * 100
+                    color = colors[cat]
+                    st.markdown(f"""
+                    <div style="background:{color}22;border-left:3px solid {color};
+                                border-radius:0 6px 6px 0;padding:4px 10px;margin:3px 0;
+                                font-size:12px;color:var(--color-text-primary)">
+                        {cat} — <b>{count} saat</b> ({pct:.0f}%)
+                    </div>
+                    """, unsafe_allow_html=True)
+
         # AI Prediction Panel
         st.divider()
         st.subheader("AI Proqnoz Paneli — Sabah")
