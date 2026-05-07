@@ -7,7 +7,7 @@ Request / response models for the FastAPI service.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -21,7 +21,9 @@ class HealthResponse(BaseModel):
 
 
 class PredictRequest(BaseModel):
-    datetime: Optional[datetime] = Field(
+    model_config = {"arbitrary_types_allowed": True}
+
+    target_dt: Optional[str] = Field(
         default=None,
         description="Target datetime for prediction. Defaults to now+1h.",
         examples=["2025-06-15T14:00:00"],
@@ -59,8 +61,7 @@ class PredictResponse(BaseModel):
     generated_at:  datetime
     current:       dict
     forecast:      list[ForecastStep]
-    recommendations: dict[str, str]
-
+    recommendations: dict[str, Any]
 
 class MetricsResponse(BaseModel):
     model_name:  str
