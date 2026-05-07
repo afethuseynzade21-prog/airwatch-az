@@ -804,6 +804,88 @@ with tab5:
     </div>
     """, unsafe_allow_html=True)
 
+    st.divider()
+
+    # ── Citizen Report Bölməsi ──────────────────────────────────────────────
+    st.subheader("Vətəndaş Çirklənmə Reportu")
+    st.caption("Ətrafda çirklənmə müşahidə etdinizmi? Bildirin — məlumatlarınız ekoloji monitorinqə kömək edir.")
+
+    with st.form("citizen_report_form"):
+        col_r1, col_r2 = st.columns(2)
+
+        with col_r1:
+            report_type = st.selectbox("Çirklənmə növü", [
+                " Tüstü / Sənaye tüstüsü",
+                " Kimyəvi qoxu",
+                " Yanğın / Yandırma",
+                " Toz / Duman",
+                " Nəqliyyat tüstüsü",
+                " Digər",
+            ])
+            severity = st.select_slider("Şiddət", options=["Zəif", "Orta", "Güclü", "Çox güclü"])
+
+        with col_r2:
+            location = st.text_input("Lokasiya (rayon/küçə)", placeholder="məs: Sabunçu, Hüseyn Cavid pr.")
+            description = st.text_area("Əlavə məlumat (opsional)", height=100,
+                                        placeholder="Nə gördünüz? Nə vaxtdan bəri davam edir?")
+
+        submitted = st.form_submit_button("Report Göndər", use_container_width=True)
+
+        if submitted:
+            if not location:
+                st.error("Zəhmət olmasa lokasiya daxil edin.")
+            else:
+                try:
+                    from data_source.sql import DB_PATH
+                    import sqlite3
+                    from datetime import datetime
+
+                    conn = sqlite3.connect(DB_PATH)
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS citizen_reports (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            timestamp TEXT,
+                            report_type TEXT,
+                            severity TEXT,
+                            location TEXT,
+                            description TEXT
+                        )
+                    """)
+                    conn.execute("""
+                        INSERT INTO citizen_reports
+                        (timestamp, report_type, severity, location, description)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (datetime.now().isoformat(), report_type, severity, location, description))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Reportunuz qəbul edildi! Təşəkkür edirik.")
+                except Exception as e:
+                    st.error(f"Xəta: {e}")
+
+    # Son reportlar
+    st.markdown("#### Son Reportlar")
+    try:
+        from data_source.sql import DB_PATH
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            reports_df = pd.read_sql(
+                "SELECT timestamp, report_type, severity, location FROM citizen_reports ORDER BY timestamp DESC LIMIT 10",
+                conn
+            )
+            conn.close()
+            if not reports_df.empty:
+                reports_df["timestamp"] = pd.to_datetime(reports_df["timestamp"]).dt.strftime("%d %b, %H:%M")
+                reports_df.columns = ["Vaxt", "Növ", "Şiddət", "Lokasiya"]
+                st.dataframe(reports_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Hələ heç bir report göndərilməyib.")
+        except:
+            conn.close()
+            st.info("Hələ heç bir report göndərilməyib.")
+    except Exception as e:
+        st.info("Hələ heç bir report göndərilməyib.")
+
 
 # ── Altbilgi ──────────────────────────────────────────────────────────────────
 st.divider()
