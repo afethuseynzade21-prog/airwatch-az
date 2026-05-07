@@ -97,16 +97,16 @@ LSTM_PARAMS = {
 
 # ── WHO PM2.5 thresholds (μg/m³) ─────────────────────────────────────────────
 WHO_THRESHOLDS = [
-    {"label": "Good",         "min": 0,   "max": 12,  "color": "#2ecc71",
-     "risk": "low",    "action": "No restrictions needed."},
-    {"label": "Moderate",     "min": 12,  "max": 35,  "color": "#f1c40f",
-     "risk": "medium", "action": "Sensitive groups should limit prolonged outdoor exertion."},
-    {"label": "Unhealthy",    "min": 35,  "max": 55,  "color": "#e67e22",
-     "risk": "high",   "action": "Reduce traffic. Cancel outdoor events."},
-    {"label": "Very Unhealthy","min": 55, "max": 150, "color": "#e74c3c",
-     "risk": "critical","action": "Restrict industrial activity. Avoid all outdoor activity."},
-    {"label": "Hazardous",    "min": 150, "max": 9999,"color": "#8e44ad",
-     "risk": "extreme", "action": "Emergency protocol. Evacuation of sensitive populations."},
+    {"label": "Yaxşı",         "min": 0,   "max": 12,  "color": "#2ecc71",
+     "risk": "low",    "action": "Heç bir məhdudiyyət lazım deyil."},
+    {"label": "Orta",          "min": 12,  "max": 35,  "color": "#f1c40f",
+     "risk": "medium", "action": "Həssas qruplar açıq havada vaxt keçirməyi azaltsın."},
+    {"label": "Zərərli",       "min": 35,  "max": 55,  "color": "#e67e22",
+     "risk": "high",   "action": "Trafik məhdudiyyəti. Açıq hava tədbirləri ləğv edilsin."},
+    {"label": "Çox Zərərli",   "min": 55,  "max": 150, "color": "#e74c3c",
+     "risk": "critical","action": "Sənaye fəaliyyəti məhdudlaşdırılsın. Çölə çıxmayın."},
+    {"label": "Təhlükəli",     "min": 150, "max": 9999,"color": "#8e44ad",
+     "risk": "extreme", "action": "Fövqəladə protokol. Həssas əhali təxliyə edilsin."},
 ]
 
 # ── Logging ───────────────────────────────────────────────────────────────────

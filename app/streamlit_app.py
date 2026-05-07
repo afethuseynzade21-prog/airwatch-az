@@ -129,6 +129,94 @@ with tab1:
     risk        = classify_risk(latest_pm25)
     ts_latest   = df["timestamp"].iloc[-1]
 
+    # KPI kartları
+    temp_val = float(df["temp"].iloc[-1]) if "temp" in df.columns and pd.notna(df["temp"].iloc[-1]) else None
+    humidity_val = float(df["humidity"].iloc[-1]) if "humidity" in df.columns and pd.notna(df["humidity"].iloc[-1]) else None
+    wind_val = float(df["wind_speed"].iloc[-1]) if "wind_speed" in df.columns and pd.notna(df["wind_speed"].iloc[-1]) else None
+
+    def pm25_to_aqi_val(pm):
+        for c_lo, c_hi, i_lo, i_hi in [(0,12,0,50),(12.1,35.4,51,100),(35.5,55.4,101,150),(55.5,150.4,151,200)]:
+            if c_lo <= pm <= c_hi:
+                return round((i_hi-i_lo)/(c_hi-c_lo)*(pm-c_lo)+i_lo)
+        return 301
+
+    aqi_val = pm25_to_aqi_val(latest_pm25)
+    risk_color = risk['color']
+
+    st.markdown(f"""
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:1.25rem">
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid {risk_color}">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">AQI</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:{risk_color}">{aqi_val}</p>
+        <p style="font-size:12px;color:{risk_color};margin:4px 0 0">{risk['label']}</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid #EF9F27">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">PM2.5</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:var(--color-text-primary)">{latest_pm25:.1f}</p>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0">μg/m³ · {latest_pm25/5:.1f}× WHO</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid #378ADD">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">Temperatur</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:var(--color-text-primary)">{f"{temp_val:.0f}°C" if temp_val else "—"}</p>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0">Külək: {f"{wind_val:.1f} m/s" if wind_val else "—"}</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid #1D9E75">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">Rütubət</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:var(--color-text-primary)">{f"{humidity_val:.0f}%" if humidity_val else "—"}</p>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0">Nisbi rütubət</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid {risk_color}">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">Risk</p>
+        <p style="font-size:22px;font-weight:500;margin:0;color:{risk_color}">{risk['label']}</p>
+        <p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0">{risk['action'][:30]}...</p>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # KPI kartları
+    temp_val = float(df["temp"].iloc[-1]) if "temp" in df.columns and pd.notna(df["temp"].iloc[-1]) else None
+    humidity_val = float(df["humidity"].iloc[-1]) if "humidity" in df.columns and pd.notna(df["humidity"].iloc[-1]) else None
+    wind_val = float(df["wind_speed"].iloc[-1]) if "wind_speed" in df.columns and pd.notna(df["wind_speed"].iloc[-1]) else None
+
+    def pm25_to_aqi_val(pm):
+        for c_lo, c_hi, i_lo, i_hi in [(0,12,0,50),(12.1,35.4,51,100),(35.5,55.4,101,150),(55.5,150.4,151,200)]:
+            if c_lo <= pm <= c_hi:
+                return round((i_hi-i_lo)/(c_hi-c_lo)*(pm-c_lo)+i_lo)
+        return 301
+
+    aqi_val = pm25_to_aqi_val(latest_pm25)
+    risk_color = risk['color']
+
+    st.markdown(f"""
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:1.25rem">
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid {risk_color}">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">AQI</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:{risk_color}">{aqi_val}</p>
+        <p style="font-size:12px;color:{risk_color};margin:4px 0 0">{risk['label']}</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid #EF9F27">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">PM2.5</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:var(--color-text-primary)">{latest_pm25:.1f}</p>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0">μg/m³ · {latest_pm25/5:.1f}× WHO</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid #378ADD">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">Temperatur</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:var(--color-text-primary)">{f"{temp_val:.0f}°C" if temp_val else "—"}</p>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0">Külək: {f"{wind_val:.1f} m/s" if wind_val else "—"}</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid #1D9E75">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">Rütubət</p>
+        <p style="font-size:26px;font-weight:500;margin:0;color:var(--color-text-primary)">{f"{humidity_val:.0f}%" if humidity_val else "—"}</p>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin:4px 0 0">Nisbi rütubət</p>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:12px;padding:1rem;border-left:3px solid {risk_color}">
+        <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;text-transform:uppercase;letter-spacing:.06em">Risk</p>
+        <p style="font-size:22px;font-weight:500;margin:0;color:{risk_color}">{risk['label']}</p>
+        <p style="font-size:11px;color:var(--color-text-secondary);margin:4px 0 0">{risk['action'][:30]}...</p>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     col_left, col_mid, col_right = st.columns([1, 1, 2])
 
     with col_left:
