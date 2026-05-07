@@ -345,8 +345,9 @@ with tab3:
         col_map, col_bar = st.columns([2, 1])
 
         with col_map:
-            from src.geo_simple import show_map
-            show_map()
+            folium_map = build_folium_map(station_readings)
+            from streamlit_folium import folium_static
+            folium_static(folium_map, width=700, height=450)
 
         with col_bar:
             st.plotly_chart(

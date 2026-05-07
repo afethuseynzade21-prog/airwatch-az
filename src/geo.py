@@ -146,7 +146,7 @@ def build_folium_map(
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=zoom,
-        tiles="CartoDB positron",
+        tiles="OpenStreetMap",
     )
 
     # IDW heatmap layer
@@ -163,14 +163,7 @@ def build_folium_map(
         for j in range(GLON.shape[1])
         if not np.isnan(grid_pm25[i, j])
     ]
-    HeatMap(
-        heat_data,
-        min_opacity=0.2,
-        max_opacity=0.7,
-        gradient={0.0: "#2ecc71", 0.35: "#f1c40f", 0.6: "#e67e22", 0.8: "#e74c3c", 1.0: "#8e44ad"},
-        radius=25,
-        blur=20,
-    ).add_to(m)
+    # HeatMap temporarily disabled — markers only
 
     # Station markers
     for station, pm25 in station_readings.items():
