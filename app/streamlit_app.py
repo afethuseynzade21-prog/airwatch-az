@@ -435,6 +435,69 @@ with tab2:
             st.metric("Orta AQI", int(fc_df["aqi_pred"].mean()))
             st.metric("Maks AQI", int(fc_df["aqi_pred"].max()))
 
+        # AI Prediction Panel
+        st.divider()
+        st.subheader("AI Proqnoz Paneli — Sabah")
+
+        tomorrow_df = fc_df.copy()
+
+        # Outdoor Risk Score (0-100)
+        avg_pm25 = tomorrow_df["pm25_pred"].mean()
+        max_pm25 = tomorrow_df["pm25_pred"].max()
+        outdoor_score = max(0, min(100, int(100 - (avg_pm25 / 150 * 100))))
+
+        score_color = "#2ecc71" if outdoor_score >= 70 else "#f1c40f" if outdoor_score >= 40 else "#e74c3c"
+        score_label = "Əlverişli" if outdoor_score >= 70 else "Ehtiyatlı ol" if outdoor_score >= 40 else "Tövsiyə edilmir"
+
+        # Təhlükəli saatlar
+        danger_hours = tomorrow_df[tomorrow_df["pm25_pred"] > 50]["target_time"].dt.hour.tolist()
+        danger_str = ", ".join([f"{h:02d}:00" for h in sorted(set(danger_hours))]) if danger_hours else "Yoxdur"
+
+        # Ən yaxşı saat
+        daytime_df = tomorrow_df[tomorrow_df["target_time"].dt.hour.between(7, 18)]
+        if not daytime_df.empty:
+            best_hour = daytime_df.loc[daytime_df["pm25_pred"].idxmin(), "target_time"]
+            best_hour_str = best_hour.strftime("%H:00")
+        else:
+            best_hour_str = "—"
+
+        col_ai1, col_ai2, col_ai3 = st.columns(3)
+
+        with col_ai1:
+            st.markdown(f"""
+            <div style="background:var(--color-background-secondary);border-radius:12px;
+                        padding:1.25rem;text-align:center;border-top:3px solid {score_color}">
+              <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 6px;
+                        text-transform:uppercase;letter-spacing:.06em">Outdoor Risk Score</p>
+              <p style="font-size:42px;font-weight:500;margin:0;color:{score_color}">{outdoor_score}</p>
+              <p style="font-size:13px;color:{score_color};margin:4px 0 0">{score_label}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_ai2:
+            st.markdown(f"""
+            <div style="background:var(--color-background-secondary);border-radius:12px;
+                        padding:1.25rem;border-top:3px solid #e74c3c">
+              <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 8px;
+                        text-transform:uppercase;letter-spacing:.06em">Təhlükəli Saatlar</p>
+              <p style="font-size:14px;font-weight:500;margin:0;color:#e74c3c">{danger_str}</p>
+              <p style="font-size:11px;color:var(--color-text-secondary);margin:6px 0 0">
+                PM2.5 > 50 μg/m³ olacaq saatlar</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_ai3:
+            st.markdown(f"""
+            <div style="background:var(--color-background-secondary);border-radius:12px;
+                        padding:1.25rem;border-top:3px solid #2ecc71">
+              <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 8px;
+                        text-transform:uppercase;letter-spacing:.06em">Ən Yaxshi Saat</p>
+              <p style="font-size:24px;font-weight:500;margin:0;color:#2ecc71">{best_hour_str}</p>
+              <p style="font-size:11px;color:var(--color-text-secondary);margin:6px 0 0">
+                Açiq hava fəaliyyəti üçün optimal</p>
+            </div>
+            """, unsafe_allow_html=True)
+
         with st.expander("Tam proqnoz cədvəli"):
             st.dataframe(
                 fc_df[["target_time", "pm25_pred", "pm25_lower", "pm25_upper", "risk_label"]].rename(
