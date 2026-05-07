@@ -327,6 +327,40 @@ with tab1:
     )
     st.plotly_chart(fig2, use_container_width=True)
 
+    # Hava-Çirklənmə Korrelyasiyası
+    st.divider()
+    st.subheader("Hava & PM2.5 Korrelyasiyası")
+    st.caption("Meteoroloji dəyişənlər ilə PM2.5 arasındakı statistik əlaqə (korrelyasiya ≠ kauzallıq)")
+
+    wx_cols = {"wind_speed": "Külək Sürəti (m/s)", "humidity": "Rütubət (%)", "temp": "Temperatur (°C)"}
+    available_wx = {k: v for k, v in wx_cols.items() if k in df.columns and df[k].notna().sum() > 100}
+
+    if available_wx:
+        corr_cols = st.columns(len(available_wx))
+        for col, (wx_key, wx_label) in zip(corr_cols, available_wx.items()):
+            with col:
+                corr_val = df[[wx_key, "pm25"]].dropna().corr().iloc[0, 1]
+                color = "#e74c3c" if abs(corr_val) > 0.5 else "#f1c40f" if abs(corr_val) > 0.3 else "#2ecc71"
+                direction = "Tərs" if corr_val < 0 else "Düz"
+
+                fig_corr = px.scatter(
+                    df.dropna(subset=[wx_key, "pm25"]).tail(500),
+                    x=wx_key, y="pm25",
+                    trendline="ols",
+                    labels={wx_key: wx_label, "pm25": "PM2.5 (μg/m³)"},
+                    color_discrete_sequence=[color],
+                    title=f"{wx_label}<br>r = {corr_val:.2f} ({direction})",
+                )
+                fig_corr.update_traces(marker=dict(size=3, opacity=0.4))
+                fig_corr.update_layout(
+                    height=280,
+                    margin=dict(l=10, r=10, t=50, b=10),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_corr, use_container_width=True)
+    else:
+        st.info("Hava məlumatları mövcud deyil.")
+
     # Aylıq mövsümilik
     df["month"] = df["timestamp"].dt.month
     monthly = df.groupby("month")["pm25"].mean().reset_index()
