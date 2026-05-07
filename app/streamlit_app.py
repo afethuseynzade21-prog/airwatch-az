@@ -270,6 +270,39 @@ with tab1:
         st.plotly_chart(fig, use_container_width=True)
 
     # Saatlıq nümunə
+    st.subheader("Günlük Çirklənmə Dövrü")
+    
+    # Zaman periodları
+    df["hour"] = df["timestamp"].dt.hour
+    hourly = df.groupby("hour")["pm25"].agg(["mean", "std"]).reset_index()
+    
+    periods = {
+        "Səhər (06–10)":  (6,  10,  "#3498db"),
+        "Pik Saat (07–09 & 17–19)": (7, 19, "#e67e22"),
+        "Gecə (22–05)":  (22, 29,  "#8e44ad"),
+    }
+    
+    col_p1, col_p2, col_p3 = st.columns(3)
+    for col, (period_name, (h_start, h_end, color)) in zip(
+        [col_p1, col_p2, col_p3], periods.items()
+    ):
+        if h_end > 24:
+            mask = (hourly["hour"] >= h_start) | (hourly["hour"] <= h_end - 24)
+        else:
+            mask = (hourly["hour"] >= h_start) & (hourly["hour"] <= h_end)
+        period_mean = hourly.loc[mask, "mean"].mean()
+        with col:
+            st.markdown(f"""
+            <div style="background:var(--color-background-secondary);border-radius:12px;
+                        padding:0.85rem;border-top:3px solid {color};text-align:center">
+              <p style="font-size:11px;color:var(--color-text-tertiary);margin:0 0 4px;
+                        text-transform:uppercase;letter-spacing:.06em">{period_name}</p>
+              <p style="font-size:22px;font-weight:500;margin:0;color:{color}">{period_mean:.1f}</p>
+              <p style="font-size:11px;color:var(--color-text-secondary);margin:2px 0 0">μg/m³ ortalama</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("Saatlıq Nümunə (bütün məlumatlar)")
     df["hour"] = df["timestamp"].dt.hour
     hourly = df.groupby("hour")["pm25"].agg(["mean", "std", "median"]).reset_index()
