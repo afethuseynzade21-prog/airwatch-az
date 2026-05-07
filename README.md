@@ -206,6 +206,18 @@ Returns full model leaderboard with MAE, RMSE, R², MAPE per model.
 
 ---
 
+## 🆕 Yeni Feature-lar (v2.0)
+
+- ✅ **KPI Kartları** — Real-time AQI, PM2.5, Temperatur, Rütubət, Risk
+- ✅ **AI Proqnoz Paneli** — Outdoor Risk Score, Təhlükəli Saatlar, Ən Yaxşı Saat
+- ✅ **3D Çirklənmə Xəritəsi** — Pydeck ilə Bakı rayonları üzərində 3D sütunlar
+- ✅ **Hava-Çirklənmə Korrelyasiyası** — Külək, rütubət, temperatur scatter plot-ları
+- ✅ **Vətəndaş Report Modulu** — Tüstü, yanğın, toz reportları SQLite-da saxlanır
+- ✅ **FastAPI REST API** — `/predict`, `/health`, `/metrics`, `/current` endpoint-ləri
+- ✅ **Docker** — Tam stack containerization
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Local development
