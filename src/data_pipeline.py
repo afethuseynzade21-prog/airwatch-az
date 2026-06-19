@@ -206,15 +206,15 @@ def merge_and_clean(df_pm: pd.DataFrame, df_wx: pd.DataFrame) -> pd.DataFrame:
     PM2.5 + hava datasını birləşdir, təmizlə.
     """
     # Timestamp-ləri saata yuvarlaqlaşdır
-    df_pm["timestamp"] = pd.to_datetime(df_pm["timestamp"]).dt.tz_localize(None).dt.floor("h")
-    df_wx["timestamp"] = pd.to_datetime(df_wx["timestamp"]).dt.tz_localize(None).dt.floor("h")
+    df_pm["timestamp"] = pd.to_datetime(df_pm["timestamp"], utc=True).dt.tz_localize(None).dt.floor("h")
+    df_wx["timestamp"] = pd.to_datetime(df_wx["timestamp"], utc=True).dt.tz_localize(None).dt.floor("h")
 
     # WAQI yalnız cari an verir — Open-Meteo tarix aralığını əsas götür
     df = df_wx.copy()
     # PM2.5 — demo data əsasında doldur, son real dəyəri əlavə et
     from src.data_pipeline import _generate_demo_data # type: ignore
     df_demo_pm = _generate_demo_data(len(df_wx) // 24)
-    df_demo_pm["timestamp"] = pd.to_datetime(df_demo_pm["timestamp"]).dt.tz_localize(None).dt.floor("h")
+    df_demo_pm["timestamp"] = pd.to_datetime(df_demo_pm["timestamp"], utc=True).dt.tz_localize(None).dt.floor("h")
     df = pd.merge(df_wx, df_demo_pm[["timestamp","pm25","aqi","no2","o3"]], on="timestamp", how="left")
     # Son real WAQI dəyərini əlavə et
     if len(df_pm) > 0:

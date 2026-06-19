@@ -40,7 +40,7 @@ jobs:
         run: |
           python -c "
           from src.data_pipeline import fetch_all
-          df = fetch_all(days=1, save=True, persist_db=True)
+          df = fetch_all(days=7, save=True, persist_db=True)
           print(f'ETL complete: {len(df)} rows')
           "
 
