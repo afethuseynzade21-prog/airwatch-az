@@ -1,46 +1,46 @@
 [
   {
     "model": "Ridge",
-    "mae": 3.4164,
-    "mae_std": 0.4327,
-    "rmse": 4.2811,
-    "rmse_std": 0.5088,
-    "mape": 12.0906,
-    "mape_std": 3.0866,
-    "r2": 0.6734,
-    "r2_std": 0.0745
+    "mae": 3.2397,
+    "mae_std": 0.0918,
+    "rmse": 4.0729,
+    "rmse_std": 0.114,
+    "mape": 10.9943,
+    "mape_std": 3.3212,
+    "r2": 0.7049,
+    "r2_std": 0.0238
   },
   {
     "model": "LightGBM",
-    "mae": 3.763,
-    "mae_std": 0.5043,
-    "rmse": 4.71,
-    "rmse_std": 0.6309,
-    "mape": 14.2329,
-    "mape_std": 4.7904,
-    "r2": 0.603,
-    "r2_std": 0.105
+    "mae": 3.6831,
+    "mae_std": 0.3628,
+    "rmse": 4.621,
+    "rmse_std": 0.4411,
+    "mape": 12.5898,
+    "mape_std": 4.3627,
+    "r2": 0.6197,
+    "r2_std": 0.0596
   },
   {
     "model": "RandomForest",
-    "mae": 3.7898,
-    "mae_std": 0.3055,
-    "rmse": 4.7457,
-    "rmse_std": 0.3985,
-    "mape": 14.452,
-    "mape_std": 4.7743,
-    "r2": 0.6003,
-    "r2_std": 0.0633
+    "mae": 3.7695,
+    "mae_std": 0.3631,
+    "rmse": 4.7315,
+    "rmse_std": 0.4395,
+    "mape": 12.8803,
+    "mape_std": 4.529,
+    "r2": 0.6015,
+    "r2_std": 0.0602
   },
   {
     "model": "Persistence",
-    "mae": 4.6935,
-    "mae_std": 0.0667,
-    "rmse": 5.8658,
-    "rmse_std": 0.096,
-    "mape": 16.6634,
-    "mape_std": 3.6629,
-    "r2": 0.3924,
-    "r2_std": 0.0093
+    "mae": 4.6818,
+    "mae_std": 0.0747,
+    "rmse": 5.8733,
+    "rmse_std": 0.1029,
+    "mape": 15.8702,
+    "mape_std": 4.5517,
+    "r2": 0.3867,
+    "r2_std": 0.0408
   }
 ]

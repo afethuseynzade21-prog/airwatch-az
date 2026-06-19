@@ -96,6 +96,16 @@ def load_errors():
     return pd.read_csv(path)
 
 
+@st.cache_data(ttl=600)
+def load_model_history():
+    path = MODEL_DIR / "model_history.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(path)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    return df
+
+
 # ── Başlıq ───────────────────────────────────────────────────────────────────
 
 st.markdown("""
@@ -745,6 +755,30 @@ with tab4:
                 st.plotly_chart(fig_s, use_container_width=True)
     else:
         st.info("Xəta analizini yaratmaq üçün öyrətməni işə salın.")
+
+    st.divider()
+
+    # Model Drift Monitoring
+    st.subheader("Model Tarixçəsi (Drift Monitoring)")
+    hist_df = load_model_history()
+    if not hist_df.empty and len(hist_df) > 1:
+        fig_hist = go.Figure()
+        fig_hist.add_trace(go.Scatter(
+            x=hist_df["timestamp"], y=hist_df["mae"],
+            mode="lines+markers", name="MAE",
+            line=dict(color="#e74c3c", width=2),
+        ))
+        fig_hist.update_layout(
+            title="Retrain Tarixçəsi — MAE Zamanla",
+            yaxis_title="MAE (μg/m³)", xaxis_title="Retrain Tarixi",
+            height=280, margin=dict(l=10, r=10, t=50, b=10),
+        )
+        st.plotly_chart(fig_hist, use_container_width=True)
+        st.caption(f"Cəmi {len(hist_df)} retrain qeydə alınıb. Son model: {hist_df.iloc[-1]['best_model']}, MAE={hist_df.iloc[-1]['mae']:.2f}")
+    elif not hist_df.empty:
+        st.info(f"İlk retrain qeydə alınıb (MAE={hist_df.iloc[0]['mae']:.2f}). Trend görmək üçün bir neçə retrain lazımdır.")
+    else:
+        st.info("Model tarixçəsi hələ yoxdur. `python -m src.train` bir neçə dəfə işlədikdən sonra burada trend görünəcək.")
 
     # Model Məhdudiyyətləri
     with st.expander("Model Məhdudiyyətləri və Risk Açıqlamaları"):

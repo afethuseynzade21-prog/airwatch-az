@@ -272,6 +272,33 @@ def run_experiment(
 
         log.info(f"Artifacts saved to {MODEL_DIR}/")
 
+        # ── Model drift monitoring: tarixçəyə əlavə et ──────────────────────
+        try:
+            from datetime import datetime
+            history_path = MODEL_DIR / "model_history.csv"
+
+            best_row = df_results.loc[best_name] if best_name in df_results.index else None
+            if best_row is not None:
+                history_entry = pd.DataFrame([{
+                    "timestamp":  datetime.now().isoformat(),
+                    "best_model": best_name,
+                    "mae":        round(float(best_row.get("mae", float("nan"))), 4),
+                    "rmse":       round(float(best_row.get("rmse", float("nan"))), 4),
+                    "r2":         round(float(best_row.get("r2", float("nan"))), 4),
+                    "n_samples":  len(X),
+                }])
+
+                if history_path.exists():
+                    existing = pd.read_csv(history_path)
+                    combined = pd.concat([existing, history_entry], ignore_index=True)
+                else:
+                    combined = history_entry
+
+                combined.to_csv(history_path, index=False)
+                log.info(f"Model history yeniləndi: {history_path} ({len(combined)} qeyd)")
+        except Exception as e:
+            log.warning(f"Model history saxlama xətası: {e}")
+
     return df_results, best_model, {"shap": shap_df, "errors": error_df}
 
 

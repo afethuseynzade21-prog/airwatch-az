@@ -1,0 +1,2 @@
+timestamp,best_model,mae,rmse,r2,n_samples
+2026-06-19T23:40:07.988488,LightGBM,3.6831,4.621,0.6197,8448
