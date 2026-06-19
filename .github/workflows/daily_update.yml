@@ -1,6 +1,9 @@
 name: ETL + Retrain Pipeline
 
 on:
+  push:
+    branches: [main, master]
+  pull_request:
   schedule:
     # Hourly data fetch: every hour at minute 5
     - cron: "5 * * * *"
