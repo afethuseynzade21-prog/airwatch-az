@@ -22,9 +22,13 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from api.schemas import (
     ForecastStep,
@@ -63,6 +67,11 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+# ── Rate limiting: hər IP üçün dəqiqədə 10 sorğu ────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # ── Startup — warm up model ───────────────────────────────────────────────────
@@ -124,7 +133,9 @@ def health():
 
 
 @app.get("/predict", response_model=PredictResponse, tags=["Prediction"])
+@limiter.limit("10/minute")
 def predict(
+    request: Request,
     horizon_h: int = Query(default=24, ge=1, le=72, description="Forecast horizon (hours)"),
 ):
     """
